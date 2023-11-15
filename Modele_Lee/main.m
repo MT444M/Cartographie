@@ -1,0 +1,271 @@
+
+clc;
+all clear;
+%close all;
+
+%% ---------------------Variables d'entrées ------------------------------
+C_chl=10;
+C_nap=10;
+C_cdom=0.01;
+S_nap = 0.0106;
+S_cdom = 0.0157;
+a_NAPa_440 = 0.0048;
+b_bphy_542 = 0.00038;
+Y_phy = 0.681;
+b_bNAP_542 = 0.0054;
+Y_NAP = 0.681;
+z=100;
+theta_w=30;
+theta_v=0;
+
+
+%% ------------Calcul de l'absorption spectrale a(lambda) -----------------
+
+%-----------Importation des mesures 
+data1 = load('aw.txt');
+lambda = data1(:,1);
+
+%----------absorption de l'eau
+aw = data1(:,2);
+
+% figure()
+%     plot(lambda,aw)
+%     grid("on")
+%     title("le Spectre de l'absorption de l'eau")
+%     xlabel('\lambda')
+%     ylabel('aw')
+
+%--------------------------------
+data2 = load('aphya.txt');
+aphya = data2(:,2);
+%--------absorption du phytoplancton
+aphy = C_chl*aphya;
+
+% figure()
+%     plot(lambda,aphya)
+%     grid("on")
+%     title("le Spectre specifique de l'absorption du phytoplancton")
+%     xlabel('\lambda')
+%     ylabel('a_p_h_y_a')
+
+%-------------------------------
+ 
+a_NAP = C_nap*a_NAPa_440.*exp(-S_nap*(lambda-440));
+
+a_CDOM = C_cdom.*exp(-S_cdom*(lambda-440));
+
+%------- l'absorption total
+a_total = aw + aphy + a_NAP + a_CDOM ; 
+
+% figure()
+%     plot(lambda,aphy)
+%     grid("on")
+%     title("le Spectre l'absorption")
+%     xlabel('\lambda')
+%     ylabel('a')
+%     hold('on')
+%     plot(lambda,aw)
+%     plot(lambda,a_CDOM)
+%     plot(lambda,a_NAP)
+%     plot(lambda,a_total)
+%     legend('a_p_h_y','a_w','a_N_A_P','a_{CDOM}','a_{total}')
+% 
+% 
+% 
+% figure()
+%     plot(lambda,a_total)
+%     grid("on")
+%     title("le Spectre de l'absorption total")
+%     xlabel('\lambda')
+%     ylabel('a_{total}')
+
+
+%% --------------Calcul de la rétro-diffusion bb(lambda)-------------------
+%-------le spectre de rétrodiffusion de l'eau
+b_bw=0.00144*(lambda./500).^(-4.32);
+
+figure()
+    plot(lambda,b_bw)
+    grid("on")
+    title("le spectre de rétrodiffusion de l'eau")
+    xlabel('\lambda')
+    ylabel('b_b_w')
+
+%---------------------le spectre de rétrodiffusion particulaire
+b_bp = C_chl*b_bphy_542*(542./lambda).^Y_phy + C_nap*b_bNAP_542*(542./lambda).^Y_NAP;
+
+figure()
+    plot(lambda,b_bp)
+    grid("on")
+    title("le spectre de rétrodiffusion particulaire")
+    xlabel('\lambda')
+    ylabel('b_b_p')
+ 
+%---------------------------------le spectre de rétrodiffusion total
+b_b = b_bw + b_bp;
+
+figure()
+    plot(lambda,b_bp)
+    grid("on")
+    title("le spectre de rétrodiffusion total")
+    xlabel('\lambda')
+    ylabel('b_b')
+
+   
+%% -----------------Calcul de réflectance R_rs ----------------------------
+
+%-------importation de paramètres de type de fond
+sable_gris = load('grey_sand.txt');
+vegetation_basse = load('small_vegetation.txt');
+vegetation_haute = load('high_vegetation.txt');
+
+%---------------Padding 
+p_f1 = [sable_gris(:,2) ;sable_gris(800)*ones(100,1)];
+p_f2 = [vegetation_basse(:,2) ;vegetation_basse(800)*ones(100,1)];
+p_f3 = [vegetation_haute(:,2) ;vegetation_haute(800)*ones(100,1)];
+
+%----------variables intermédiares pour le calcul de la reflectance de
+%télédetection sous la surface.
+
+K = a_total + b_b; % coefficient d'attténuation diffuse 
+u = b_b./(a_total + b_b);
+u_p = b_bp./(a_total + b_b);
+D_uc = 1.03*(1+2.4.*u).^(0.5);
+D_ub = 1.04*(1+5.4*u).^(0.5);
+g_p = 0.184.*(1-0.602.*exp(-3.852.*u_p));
+g_w = 0.115;
+r_rs_dp = g_w.*b_bw./(a_total + b_b) + g_p.*b_bp./(a_total +b_b);
+Rrs_C = r_rs_dp.*(1-exp(-(1./cosd(theta_w) + D_uc./cosd(theta_v)).*K.*z));
+Rrs_B1 = 1/pi .* p_f1 .* exp( -(1./cosd(theta_w) + D_ub./cos(theta_v)).*K.*z);
+r_rs1 = Rrs_B1 + Rrs_C;
+
+%------la réflectance de télédetection
+R_rs1 = (0.52*r_rs1)./(1-1.56*r_rs1);
+
+
+% figure()
+%     plot(lambda,r_rs1)
+%     grid("on")
+%     title("Reflectances")
+%     xlabel('\lambda')
+%     ylabel('r_r_s')
+%     
+%     legend("sable gris")
+
+figure()
+    plot(lambda,R_rs1)
+    grid("on")
+    title("Reflectance de télétection")
+    xlabel('\lambda')
+    ylabel('R_r_s')
+    legend("sable gris")
+
+%% -----------------------Tests du modèle de Lee---------------------------
+
+%1) Influence de la chlorphylle sur le spectre de réflectance
+% R1 = lee([0.01,0.0001,0.0001,100],"grey_sand.txt");
+% R2 = lee([0.1,0.0001,0.0001,100],"grey_sand.txt");
+% R3 = lee([1,0.0001,0.0001,100],"grey_sand.txt");
+% R4 = lee([10,0.0001,0.0001,100],"grey_sand.txt"); 
+% 
+% figure()
+%     plot(lambda,R1)
+%     hold on 
+%     plot(lambda,R2)
+%     plot(lambda,R3)
+%     plot(lambda,R4)
+%     title("Influence de la chlorphylle sur le spectre de réflectance")
+%     grid("on")
+%     legend("Chl = 0.01 ","Chl = 0.1","Chl = 1", "Chl = 10")
+%     hold off 
+
+ % 2) Influence des matières minérales sur le spectre de réflectance
+% R1 = lee([0.0001,0.1,0.0001,100],"grey_sand.txt");
+% R2 = lee([0.0001,1,0.0001,100],"grey_sand.txt");
+% R3 = lee([0.0001,5,0.0001,100],"grey_sand.txt");
+% R4 = lee([0.0001,10.1,0.0001,100],"grey_sand.txt"); 
+% R5 = lee([0.0001,50.1,0.0001,100],"grey_sand.txt"); 
+
+% figure()
+%     plot(lambda,R1)
+%     hold on 
+%     plot(lambda,R2)
+%     plot(lambda,R3)
+%     plot(lambda,R4)
+%     plot(lambda,R5)
+%     title("Matières minirales")
+%     grid("on")
+%     legend(" C_{nap}= 0.1 ","C_{nap} = 1","C_{nap} = 5", "C_{nap} = 10", "C_{nap} = 50")
+%     hold off 
+%   
+
+% 3) influence de la matière organique dissoute sur le spectre de
+
+% R1 = lee([0.001,0.0001,0.001,100],"grey_sand.txt");
+% R2 = lee([0.001,0.0001,0.01,100],"grey_sand.txt");
+% R3 = lee([0.001,0.0001,0.1,100],"grey_sand.txt");
+% R4 = lee([0.001,0.0001,1,100],"grey_sand.txt"); 
+
+
+% figure()
+%     plot(lambda,R1)
+%     hold on 
+%     plot(lambda,R2)
+%     plot(lambda,R3)
+%     plot(lambda,R4)
+%     title("Matières organiques dissoute")
+%     grid("on")
+%     legend(" C_{cdom}= 0.001 ","C_{cdom} = 0.01","C_{cdom} = 0.1", "C_{cdom} = 1")
+%     hold off
+
+
+% % 4) Influence de la profondeur sur le spectre de réflectance
+% % Eau claire
+% R1 = lee([0.0001,0.0001,0.0001,50],"grey_sand.txt");
+% R2 = lee([0.0001,0.0001,0.0001,20],"grey_sand.txt");
+% R3 = lee([0.0001,0.0001,0.0001,10],"grey_sand.txt");
+% R4 = lee([0.0001,0.0001,0.0001,5],"grey_sand.txt");
+% R5 = lee([0.0001,0.0001,0.0001,2],"grey_sand.txt");
+% 
+% figure()
+%     plot(lambda,R1)
+%     hold on 
+%     plot(lambda,R2)
+%     plot(lambda,R3)
+%     plot(lambda,R4)
+%     plot(lambda,R5)
+%     title("Influence de la profondeur sur le spectre de réflectance : eau claire")
+%     legend(" z= 50 ","z = 20","z = 10", "z= 5", "z= 2")
+%     grid on
+%     hold off
+
+  % Eau turbide 
+% R1 = lee([10,50,0.1,1],"grey_sand.txt");
+% R2 = lee([10,50,0.1,50],"grey_sand.txt");
+% 
+% figure()
+%     hold on 
+%     plot(lambda,R1)
+%     plot(lambda,R2)
+%     title("Influence de la profondeur sur le spectre de réflectance : eau turbide")
+%     legend(" z= 1 ", "z= 50")
+%     grid on
+%     hold off
+
+% Influence du fond sur le spectre de réflectance 
+R1 = lee([0.0001,0.0001,0.0001,2],"grey_sand.txt");
+R2 = lee([0.0001,0.0001,0.0001,2],"high_vegetation.txt");
+R3 = lee([0.0001,0.0001,0.0001,2],"small_vegetation.txt");
+
+
+figure()
+    hold on 
+    plot(lambda,R1)
+    plot(lambda,R2)
+    plot(lambda,R3)
+    title("Influence du fond sur le spectre de réflectance")
+    legend("Sable", "haute végétation", "base végétation")
+    grid on
+    hold off
+
+
